@@ -156,6 +156,7 @@
       background: #fff; color: var(--ink); width: 100%;
     }
     textarea { min-height: 140px; resize: vertical; }
+    .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
     .form-status { grid-column: 1 / -1; font-size: .92rem; color: var(--accent-dark); min-height: 1.5em; margin: 0; }
 
     /* Footer */
@@ -403,7 +404,7 @@
       <h2 class="section-title" id="contact-title">詢問檔期</h2>
       <p class="section-lead">留下你的資訊，我會盡快與你聯絡。熱門日期建議提早詢問。</p>
 
-      <form class="form" id="inquiry-form" action="mailto:hello@example.com" method="post" enctype="text/plain">
+      <form class="form" id="inquiry-form" method="post">
         <div class="field">
           <label for="name">姓名 *</label>
           <input id="name" name="name" type="text" required autocomplete="name">
@@ -445,8 +446,13 @@
           <label for="message">留言</label>
           <textarea id="message" name="message" placeholder="想拍的風格、人數、特別想留下的畫面…"></textarea>
         </div>
+        <!-- 防機器人欄位：真人看不到，請勿填寫 -->
+        <div class="hp" aria-hidden="true">
+          <label for="website">網站</label>
+          <input id="website" name="website" type="text" tabindex="-1" autocomplete="off">
+        </div>
         <div class="field full">
-          <button class="btn btn-primary" type="submit">送出詢問</button>
+          <button class="btn btn-primary" type="submit" id="submit-btn">送出詢問</button>
         </div>
         <p class="form-status" id="form-status" role="status" aria-live="polite"></p>
       </form>
@@ -480,13 +486,18 @@
 <script>
   document.getElementById('year').textContent = new Date().getFullYear();
 
-  // 表單：預設以 mailto 開啟郵件軟體。若要改成雲端收件，見 README（Formspree）。
+  // ===== 詢問表單 → Google 試算表 + Email 通知 =====
+  // 貼上 Apps Script 部署後的「網頁應用程式網址」（結尾為 /exec）。
+  // 留空時會改用 mailto 開啟郵件軟體作為備援。
+  var FORM_ENDPOINT = '';
+  var FALLBACK_EMAIL = 'hello@example.com';
+
   (function () {
     var form = document.getElementById('inquiry-form');
     var status = document.getElementById('form-status');
-    form.addEventListener('submit', function (e) {
-      e.preventDefault();
-      var d = new FormData(form);
+    var btn = document.getElementById('submit-btn');
+
+    function mailtoFallback(d) {
       var body = [
         '姓名：' + d.get('name'),
         '聯絡方式：' + d.get('contact'),
@@ -497,8 +508,34 @@
         '留言：' + (d.get('message') || '無')
       ].join('\n');
       var subject = '【檔期詢問】' + d.get('type') + '－' + d.get('name');
-      window.location.href = 'mailto:hello@example.com?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
-      status.textContent = '已為你開啟郵件軟體，送出後我會盡快回覆。若沒有跳出，請直接來信 hello@example.com。';
+      window.location.href = 'mailto:' + FALLBACK_EMAIL + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+      status.textContent = '已為你開啟郵件軟體，送出後我會盡快回覆。';
+    }
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var d = new FormData(form);
+
+      if (!FORM_ENDPOINT) { mailtoFallback(d); return; }
+
+      btn.disabled = true;
+      btn.textContent = '送出中…';
+      status.textContent = '';
+
+      // Apps Script 不回傳 CORS 標頭，使用 no-cors 的簡單請求送出
+      fetch(FORM_ENDPOINT, {
+        method: 'POST',
+        mode: 'no-cors',
+        body: new URLSearchParams(d)
+      }).then(function () {
+        form.reset();
+        status.textContent = '已收到你的詢問！我會在 1–2 個工作天內與你聯絡。';
+      }).catch(function () {
+        status.textContent = '送出失敗，請稍後再試，或直接來信 ' + FALLBACK_EMAIL + '。';
+      }).finally(function () {
+        btn.disabled = false;
+        btn.textContent = '送出詢問';
+      });
     });
   })();
 </script>
